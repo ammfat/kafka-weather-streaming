@@ -6,7 +6,7 @@ from datetime import datetime
 from time import sleep
 
 import requests
-from confluent_kafka import Producer
+from kafka import KafkaProducer as Producer
 
 # Weather data URLs
 areas = 'areas.csv'
@@ -23,17 +23,7 @@ config = dict(config_parser['default'])
 
 # Kafka producer
 topic = 'weather'
-producer = Producer(config)
-
-def delivery_callback(err, msg):
-    """ Called once for each message produced to indicate delivery result. """
-
-    if err:
-        print(f"Message failed delivery: {err}")
-    else:
-        print(
-            f"Produced event to topic {msg.topic()}: key = {msg.key()} value = {msg.value()}"
-        )
+producer = Producer(**config)
 
 def publish_weather_data(url):
     """ Publish weather data to Kafka topic. """
@@ -59,20 +49,23 @@ def publish_weather_data(url):
         data['error_message'] = f"Failed to fetch weather data from {url}"
         data['body'] = None
 
-    producer.produce(
+    producer.send(
         topic,
         value=str(data).encode('utf-8'),
         key=url.split('/')[-1].encode('utf-8'),
-        callback=delivery_callback
     )
 
-    producer.poll(500)  # Trigger message delivery
+    producer.flush()
+
+    print(f"Published event to topic {topic}: key = {url.split('/')[-1]} value = {data}")
 
 def main():
     """ Main function. """
 
-    with open(areas, 'r', encoding='utf-8') as file:
-        reader = csv.DictReader(file)
+    # print(config)
+
+    with open(areas, 'r', encoding='utf-8') as area_file:
+        reader = csv.DictReader(area_file)
         urls = [base_url + row['id'] + '.json' for row in reader]
 
     while True:
@@ -80,7 +73,6 @@ def main():
             for url in urls:
                 publish_weather_data(url)
 
-            producer.flush()  # Ensure all messages are delivered
             sleep(2)
         
         except KeyboardInterrupt:
